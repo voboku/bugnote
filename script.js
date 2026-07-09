@@ -255,6 +255,10 @@ const TWO_PI_CONST = Math.PI * 2;
 
     function maybeTriggerParticle(p, sx, sy, amount, nowMs) {
       if (!audioBuffer || !audioCtx || voices >= MAX_VOICES) return;
+      if (audioCtx.state !== "running") {
+        audioCtx.resume();
+        return;
+      }
       const density = effects.density ? settings.density : 0.48;
       const particleCooldown = map(density, 0, 1, 460, 70);
       const globalGap = map(density, 0, 1, 42, 8);
@@ -774,15 +778,24 @@ const TWO_PI_CONST = Math.PI * 2;
     function unlockAudioFromGesture() {
       userStartAudio().then(() => {
         if (!audioCtx || audioUnlocked) return;
-        const buffer = audioCtx.createBuffer(1, 1, audioCtx.sampleRate);
+        const buffer = audioCtx.createBuffer(1, Math.max(1, Math.floor(audioCtx.sampleRate * 0.02)), audioCtx.sampleRate);
         const source = audioCtx.createBufferSource();
         const gain = audioCtx.createGain();
-        gain.gain.value = 0;
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < data.length; i++) {
+          data[i] = Math.sin(i * 0.08) * 0.001;
+        }
+        gain.gain.value = 0.001;
         source.buffer = buffer;
         source.connect(gain).connect(audioCtx.destination);
         source.start(0);
         audioUnlocked = true;
       }).catch(() => {});
+    }
+
+    function prepareFileInputForLoadedState() {
+      if (!fileInput) return;
+      fileInput.classList.toggle("loaded", !!audioBuffer);
     }
 
     function decodeAudioDataCompat(arrayBuffer) {
@@ -915,6 +928,8 @@ const TWO_PI_CONST = Math.PI * 2;
         loadedName = file.name.replace(/\.[^.]+$/, "");
         chopAudio();
         reassignSlices();
+        prepareFileInputForLoadedState();
+        unlockAudioFromGesture();
         message = loadedName ? `${loadedName} lives in the cloud` : "sound lives in the cloud";
         messageUntil = millis() + 2600;
       } catch (error) {

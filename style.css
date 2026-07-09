@@ -40,6 +40,12 @@ html,
       appearance: none;
     }
 
+    #fileInput.loaded {
+      pointer-events: none;
+      width: 1px;
+      height: 1px;
+    }
+
     .veil {
       position: fixed;
       inset: 0;
