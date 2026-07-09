@@ -44,13 +44,49 @@ button, label, a {
   padding: 0;
   border: 0;
   background: transparent;
-  color: color-mix(in srgb, var(--grass) 65%, var(--sky));
+  color: color-mix(in srgb, var(--grass) 72%, var(--ink));
   font: 24px/34px ui-rounded, system-ui, sans-serif;
   text-align: center;
   cursor: pointer;
 }
 
-.effects button[aria-pressed="true"] { color: var(--ink); }
+.effects button[aria-pressed="true"] {
+  color: var(--ink);
+  text-shadow: 0 0 10px color-mix(in srgb, var(--ink) 70%, transparent);
+}
+
+.touch-size {
+  position: fixed;
+  z-index: 4;
+  top: max(58px, calc(env(safe-area-inset-top) + 38px));
+  left: 50%;
+  display: grid;
+  grid-template-columns: 18px 96px 28px;
+  gap: 8px;
+  align-items: center;
+  transform: translateX(-50%);
+  color: color-mix(in srgb, var(--grass) 72%, var(--ink));
+  font: 14px/1 ui-rounded, system-ui, sans-serif;
+  pointer-events: auto;
+}
+
+.touch-size span {
+  color: var(--ink);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.touch-size input {
+  width: 96px;
+  accent-color: var(--ink);
+  cursor: pointer;
+}
+
+.touch-size output {
+  color: color-mix(in srgb, var(--grass) 55%, var(--ink));
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
 
 #audio-file {
   position: fixed;
@@ -113,4 +149,11 @@ button, label, a {
 @media (max-width: 640px) {
   .effects { gap: 12px; }
   .effects button { width: 30px; height: 30px; font-size: 21px; }
+  .touch-size {
+    top: max(54px, calc(env(safe-area-inset-top) + 34px));
+    grid-template-columns: 16px 78px 24px;
+    gap: 6px;
+  }
+
+  .touch-size input { width: 78px; }
 }

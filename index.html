@@ -12,11 +12,17 @@
       <canvas id="cloud"></canvas>
 
       <nav class="effects" aria-label="Effects">
-        <button type="button" data-effect="drift" aria-label="Drift" aria-pressed="false">◌</button>
+        <button type="button" data-effect="drift" aria-label="Drift" aria-pressed="false">◎</button>
         <button type="button" data-effect="reverse" aria-label="Reverse" aria-pressed="false">⌁</button>
         <button type="button" data-effect="scatter" aria-label="Scatter" aria-pressed="false">ϟ</button>
         <button type="button" data-effect="freeze" aria-label="Freeze" aria-pressed="false">✣</button>
       </nav>
+
+      <div class="touch-size" aria-label="Touch circle size">
+        <span aria-hidden="true">○</span>
+        <input id="touch-size" type="range" min="10" max="52" value="22" />
+        <output id="touch-size-value" for="touch-size">22</output>
+      </div>
 
       <button id="record" class="record" type="button" aria-label="Record" aria-pressed="false"></button>
       <a id="save" class="save" hidden aria-label="Save recording">↓</a>

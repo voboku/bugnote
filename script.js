@@ -9,13 +9,16 @@
   const saveLink = document.querySelector("#save");
   const stateNode = document.querySelector("#audio-state");
   const effectButtons = [...document.querySelectorAll("[data-effect]")];
+  const touchSize = document.querySelector("#touch-size");
+  const touchSizeValue = document.querySelector("#touch-size-value");
 
   const AudioContextClass = window.AudioContext || window.webkitAudioContext;
   const mobile = matchMedia("(max-width: 700px), (pointer: coarse)").matches;
   const maxParticleCount = mobile ? 2600 : 5600;
   const minParticleCount = mobile ? 1200 : 2600;
   const particles = [];
-  const pointer = { x: -9999, y: -9999, active: false, radius: mobile ? 28 : 22 };
+  const defaultTouchRadius = mobile ? 24 : 18;
+  const pointer = { x: -9999, y: -9999, active: false, radius: defaultTouchRadius };
   const params = { grain: 0.11, density: 0.52, pitch: 1, spray: 0.12 };
   const effects = { drift: false, reverse: false, scatter: false, freeze: false };
 
@@ -326,6 +329,17 @@
     pointer.active = active;
   }
 
+  function syncTouchSize() {
+    if (!touchSize) return;
+    touchSize.value = String(pointer.radius);
+    if (touchSizeValue) touchSizeValue.textContent = String(Math.round(pointer.radius));
+  }
+
+  function updateTouchSize(event) {
+    pointer.radius = Number(event.target.value);
+    if (touchSizeValue) touchSizeValue.textContent = event.target.value;
+  }
+
   async function toggleRecording() {
     await unlockAudio();
     if (!recordDestination || !window.MediaRecorder) return announce("recording-unsupported");
@@ -355,12 +369,25 @@
   upload.addEventListener("touchend", unlockAudio, { passive: true });
   fileInput.addEventListener("change", event => loadFile(event.target.files?.[0]));
   recordButton.addEventListener("click", toggleRecording);
-  effectButtons.forEach(button => button.addEventListener("click", async () => {
-    await unlockAudio();
-    const name = button.dataset.effect;
-    effects[name] = !effects[name];
-    button.setAttribute("aria-pressed", String(effects[name]));
-  }));
+  if (touchSize) {
+    syncTouchSize();
+    ["pointerdown", "touchstart", "click"].forEach(type => {
+      touchSize.addEventListener(type, event => event.stopPropagation(), { passive: true });
+    });
+    touchSize.addEventListener("input", updateTouchSize);
+  }
+  effectButtons.forEach(button => {
+    ["pointerdown", "touchstart"].forEach(type => {
+      button.addEventListener(type, event => event.stopPropagation(), { passive: true });
+    });
+    button.addEventListener("click", event => {
+      event.stopPropagation();
+      const name = button.dataset.effect;
+      effects[name] = !effects[name];
+      button.setAttribute("aria-pressed", String(effects[name]));
+      unlockAudio();
+    });
+  });
   window.addEventListener("pointerdown", async event => { await unlockAudio(); updatePointer(event); }, { passive: true });
   window.addEventListener("pointermove", event => updatePointer(event, event.pointerType === "mouse" || event.buttons > 0), { passive: true });
   window.addEventListener("pointerup", event => updatePointer(event, false), { passive: true });
