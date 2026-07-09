@@ -1,9 +1,10 @@
 const TWO_PI_CONST = Math.PI * 2;
     const isCoarse = matchMedia("(pointer: coarse)").matches;
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
     const isSmall = Math.min(innerWidth, innerHeight) < 720;
-    const PARTICLE_COUNT = isCoarse || isSmall ? 2600 : 4200;
-    const TARGET_SLICES = isCoarse ? 192 : 384;
-    const MAX_VOICES = isCoarse ? 22 : 38;
+    const PARTICLE_COUNT = isIOS ? 1800 : (isCoarse || isSmall ? 2600 : 4200);
+    const TARGET_SLICES = isIOS ? 160 : (isCoarse ? 192 : 384);
+    const MAX_VOICES = isIOS ? 16 : (isCoarse ? 22 : 38);
     const PAL = {
       light: [242, 237, 167],
       field: [105, 146, 217],
@@ -72,6 +73,10 @@ const TWO_PI_CONST = Math.PI * 2;
       fileInput.addEventListener("change", handleFileSelect);
       window.addEventListener("dragover", (event) => event.preventDefault());
       window.addEventListener("drop", handleDrop);
+      window.addEventListener("orientationchange", () => setTimeout(windowResized, 250));
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener("resize", () => setTimeout(windowResized, 80));
+      }
       initParticles();
       initControlDust();
       textFont("ui-monospace, SFMono-Regular, Menlo, Consolas, monospace");
@@ -629,16 +634,33 @@ const TWO_PI_CONST = Math.PI * 2;
       });
     }
 
+    function eventPoint(event) {
+      const touch = event && event.touches && event.touches[0]
+        ? event.touches[0]
+        : event && event.changedTouches && event.changedTouches[0]
+          ? event.changedTouches[0]
+          : null;
+      if (touch) {
+        return {
+          x: constrain(touch.clientX, 0, width),
+          y: constrain(touch.clientY, 0, height)
+        };
+      }
+      return { x: mouseX, y: mouseY };
+    }
+
     function touchStarted(event) {
+      const pt = eventPoint(event);
       userStartAudio();
-      setPointer("touch", mouseX, mouseY);
-      handleWorldPress(mouseX, mouseY);
+      setPointer("touch", pt.x, pt.y);
+      handleWorldPress(pt.x, pt.y);
       return false;
     }
 
-    function touchMoved() {
-      setPointer("touch", mouseX, mouseY);
-      handleControlTouch(mouseX, mouseY);
+    function touchMoved(event) {
+      const pt = eventPoint(event);
+      setPointer("touch", pt.x, pt.y);
+      handleControlTouch(pt.x, pt.y);
       return false;
     }
 
@@ -829,14 +851,17 @@ const TWO_PI_CONST = Math.PI * 2;
     }
 
     function openFilePicker() {
-      userStartAudio();
       fileInput.value = "";
       fileInput.click();
+      userStartAudio();
     }
 
     async function handleFileSelect(event) {
       const file = event.target.files && event.target.files[0];
-      if (file) await loadAudioFile(file);
+      if (file) {
+        await userStartAudio();
+        await loadAudioFile(file);
+      }
     }
 
     async function handleDrop(event) {
@@ -869,7 +894,7 @@ const TWO_PI_CONST = Math.PI * 2;
 
     function chopAudio() {
       if (!audioBuffer) return;
-      const count = constrain(Math.round(map(audioBuffer.duration, 0.4, 180, 128, TARGET_SLICES)), 128, isCoarse ? 256 : 512);
+      const count = constrain(Math.round(map(audioBuffer.duration, 0.4, 180, 128, TARGET_SLICES)), 128, isIOS ? 192 : (isCoarse ? 256 : 512));
       const sliceDuration = audioBuffer.duration / count;
       slices = [];
       for (let i = 0; i < count; i++) {
@@ -891,7 +916,7 @@ const TWO_PI_CONST = Math.PI * 2;
     }
 
     function windowResized() {
-      resizeCanvas(windowWidth, windowHeight);
+      resizeCanvas(window.innerWidth, window.innerHeight);
       initParticles();
       reassignSlices();
     }
