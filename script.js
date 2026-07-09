@@ -1,6 +1,7 @@
 const TWO_PI_CONST = Math.PI * 2;
     const isCoarse = matchMedia("(pointer: coarse)").matches;
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+    const isSafari = /^((?!chrome|android|crios|fxios).)*safari/i.test(navigator.userAgent) || isIOS;
     const isSmall = Math.min(innerWidth, innerHeight) < 720;
     const PARTICLE_COUNT = isIOS ? 1800 : (isCoarse || isSmall ? 2600 : 4200);
     const TARGET_SLICES = isIOS ? 160 : (isCoarse ? 192 : 384);
@@ -38,6 +39,7 @@ const TWO_PI_CONST = Math.PI * 2;
     let messageUntil = 0;
     let firstSoundTouch = false;
     let audioUnlocked = false;
+    let audioResumePromise = null;
     let lastDirectTrigger = -9999;
 
     const settings = {
@@ -72,10 +74,7 @@ const TWO_PI_CONST = Math.PI * 2;
       pixelDensity(1);
       frameRate(45);
       fileInput = document.getElementById("fileInput");
-      fileInput.addEventListener("pointerdown", unlockAudioFromGesture, { passive: true });
-      fileInput.addEventListener("touchstart", unlockAudioFromGesture, { passive: true });
-      fileInput.addEventListener("mousedown", unlockAudioFromGesture);
-      fileInput.addEventListener("change", handleFileSelect);
+      wireFileInput();
       document.addEventListener("touchstart", unlockAudioFromGesture, { passive: true });
       document.addEventListener("pointerdown", unlockAudioFromGesture, { passive: true });
       window.addEventListener("dragover", (event) => event.preventDefault());
@@ -87,6 +86,14 @@ const TWO_PI_CONST = Math.PI * 2;
       initParticles();
       initControlDust();
       textFont("ui-monospace, SFMono-Regular, Menlo, Consolas, monospace");
+    }
+
+    function wireFileInput() {
+      if (!fileInput) return;
+      fileInput.addEventListener("pointerdown", unlockAudioFromGesture, { passive: true });
+      fileInput.addEventListener("touchstart", unlockAudioFromGesture, { passive: true });
+      fileInput.addEventListener("mousedown", unlockAudioFromGesture);
+      fileInput.addEventListener("change", handleFileSelect);
     }
 
     function draw() {
@@ -369,6 +376,24 @@ const TWO_PI_CONST = Math.PI * 2;
       lastDirectTrigger = nowMs;
       const sliceIndex = constrain(Math.floor(map(x, 0, width, 0, slices.length)), 0, slices.length - 1);
       triggerSlice(sliceIndex, x, y, amount);
+      if (isSafari) triggerSafariFallback(sliceIndex, amount * 0.58);
+    }
+
+    function triggerSafariFallback(sliceIndex, amount = 0.28) {
+      if (!audioCtx || !audioBuffer || !slices.length || audioCtx.state !== "running") return;
+      const slice = slices[sliceIndex % slices.length];
+      if (!slice) return;
+      const source = audioCtx.createBufferSource();
+      const gain = audioCtx.createGain();
+      const now = audioCtx.currentTime;
+      const duration = Math.min(slice.duration, 0.14);
+      source.buffer = audioBuffer;
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.linearRampToValueAtTime(Math.max(0.055, amount * 0.22), now + 0.012);
+      gain.gain.setTargetAtTime(0.0001, now + duration * 0.65, 0.025);
+      source.connect(gain).connect(audioCtx.destination);
+      source.start(now, slice.start, duration);
+      source.stop(now + duration + 0.06);
     }
 
     function drawControls(dt) {
@@ -768,7 +793,7 @@ const TWO_PI_CONST = Math.PI * 2;
       });
     }
 
-    async function userStartAudio() {
+    function ensureAudioGraph() {
       if (!audioCtx) {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         masterGain = audioCtx.createGain();
@@ -786,15 +811,33 @@ const TWO_PI_CONST = Math.PI * 2;
           masterCompressor.connect(recordingDestination);
         }
       }
+    }
+
+    async function userStartAudio() {
+      ensureAudioGraph();
       if (audioCtx.state !== "running") {
-        await audioCtx.resume();
+        try {
+          audioResumePromise = audioCtx.resume();
+          await audioResumePromise;
+        } catch (error) {
+          console.warn("audio resume failed", error);
+        }
       }
     }
 
     function unlockAudioFromGesture() {
-      userStartAudio().then(() => {
-        if (!audioCtx || audioUnlocked) return;
-        const buffer = audioCtx.createBuffer(1, Math.max(1, Math.floor(audioCtx.sampleRate * 0.02)), audioCtx.sampleRate);
+      ensureAudioGraph();
+      if (audioCtx.state !== "running") {
+        audioResumePromise = audioCtx.resume();
+        audioResumePromise.then(playUnlockPulse).catch(() => {});
+      }
+      playUnlockPulse();
+    }
+
+    function playUnlockPulse() {
+      if (!audioCtx || audioUnlocked) return;
+      try {
+        const buffer = audioCtx.createBuffer(1, Math.max(1, Math.floor(audioCtx.sampleRate * 0.025)), audioCtx.sampleRate);
         const source = audioCtx.createBufferSource();
         const gain = audioCtx.createGain();
         const data = buffer.getChannelData(0);
@@ -804,14 +847,45 @@ const TWO_PI_CONST = Math.PI * 2;
         gain.gain.value = 0.001;
         source.buffer = buffer;
         source.connect(gain).connect(audioCtx.destination);
-        source.start(0);
+        source.start(audioCtx.currentTime);
+        source.stop(audioCtx.currentTime + 0.03);
         audioUnlocked = true;
-      }).catch(() => {});
+      } catch (error) {
+        audioUnlocked = false;
+      }
     }
 
-    function prepareFileInputForLoadedState() {
-      if (!fileInput) return;
-      fileInput.classList.toggle("loaded", !!audioBuffer);
+    function playLoadedProbe() {
+      if (!audioCtx || !audioBuffer || !slices.length || audioCtx.state !== "running") return;
+      try {
+        const slice = slices[Math.floor(slices.length * 0.5)] || slices[0];
+        const source = audioCtx.createBufferSource();
+        const gain = audioCtx.createGain();
+        const now = audioCtx.currentTime;
+        const duration = Math.min(slice.duration, 0.16);
+        source.buffer = audioBuffer;
+        gain.gain.setValueAtTime(0.0001, now);
+        gain.gain.linearRampToValueAtTime(isSafari ? 0.22 : 0.12, now + 0.018);
+        gain.gain.setTargetAtTime(0.0001, now + duration * 0.55, 0.035);
+        source.connect(gain).connect(audioCtx.destination);
+        source.start(now, slice.start, duration);
+        source.stop(now + duration + 0.08);
+      } catch (error) {
+        console.warn("probe playback failed", error);
+      }
+    }
+
+    function rebuildFileInput(disabled = false) {
+      if (!fileInput || !fileInput.parentNode) return;
+      const next = document.createElement("input");
+      next.id = "fileInput";
+      next.className = "file-input";
+      next.type = "file";
+      next.accept = "audio/*";
+      if (disabled) next.classList.add("loaded");
+      fileInput.replaceWith(next);
+      fileInput = next;
+      wireFileInput();
     }
 
     function decodeAudioDataCompat(arrayBuffer) {
@@ -821,6 +895,15 @@ const TWO_PI_CONST = Math.PI * 2;
         if (result && typeof result.then === "function") {
           result.then(resolve).catch(reject);
         }
+      });
+    }
+
+    function readFileAsArrayBuffer(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(reader.error || new Error("file read failed"));
+        reader.readAsArrayBuffer(file);
       });
     }
 
@@ -912,12 +995,17 @@ const TWO_PI_CONST = Math.PI * 2;
     }
 
     function openFilePicker() {
-      fileInput.value = "";
+      unlockAudioFromGesture();
+      if (audioBuffer) {
+        rebuildFileInput(false);
+      } else {
+        fileInput.value = "";
+      }
       fileInput.click();
-      userStartAudio();
     }
 
     async function handleFileSelect(event) {
+      unlockAudioFromGesture();
       const file = event.target.files && event.target.files[0];
       if (file) {
         await userStartAudio();
@@ -938,15 +1026,19 @@ const TWO_PI_CONST = Math.PI * 2;
       try {
         message = "listening...";
         messageUntil = millis() + 1200;
-        const arrayBuffer = await file.arrayBuffer();
+        const arrayBuffer = await readFileAsArrayBuffer(file);
         await userStartAudio();
         audioBuffer = await decodeAudioDataCompat(arrayBuffer);
         loadedName = file.name.replace(/\.[^.]+$/, "");
         chopAudio();
         reassignSlices();
-        prepareFileInputForLoadedState();
+        rebuildFileInput(true);
         unlockAudioFromGesture();
-        setTimeout(() => triggerDirectTouch(width * 0.5, height * 0.5, 0.82), 120);
+        playLoadedProbe();
+        setTimeout(() => {
+          playLoadedProbe();
+          triggerDirectTouch(width * 0.5, height * 0.5, 0.82);
+        }, 160);
         message = loadedName ? `${loadedName} lives in the cloud` : "sound lives in the cloud";
         messageUntil = millis() + 2600;
       } catch (error) {

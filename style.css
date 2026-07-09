@@ -20,14 +20,14 @@ html,
       inset: 0;
     }
 
-    #fileInput {
+    .file-input {
       position: fixed;
       left: 50%;
       top: 50%;
       width: 112px;
       height: 112px;
       transform: translate(-50%, -50%);
-      opacity: 0.001;
+      opacity: 0;
       pointer-events: auto;
       z-index: 20;
       border: 0;
@@ -40,7 +40,16 @@ html,
       appearance: none;
     }
 
-    #fileInput.loaded {
+    .file-input::-webkit-file-upload-button,
+    .file-input::file-selector-button {
+      opacity: 0;
+      color: transparent;
+      background: transparent;
+      border: 0;
+      font-size: 0;
+    }
+
+    .file-input.loaded {
       pointer-events: none;
       width: 1px;
       height: 1px;
