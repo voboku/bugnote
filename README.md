@@ -1,13 +1,18 @@
-# Constellation Granular Sampler
+# bugnote
 
-Upload this folder as a static site. The entry file is `index.html`.
+Static web granular sampler.
 
-It works on static hosting such as Netlify, Vercel, GitHub Pages, or any server that can serve a plain HTML file.
+## Structure
 
-- Touch or click the center point to upload an audio file.
-- Touch the particle cloud to play grains.
-- Use the four corner nebulas to shape grain size, density, pitch, and spray.
-- Use the four small corner marks to enable or mute those four controls.
-- Use the lower center point to start and stop recording.
+- `index.html` - page entry
+- `style.css` - visual styling
+- `script.js` - p5.js and Web Audio logic
+- `sounds/` - optional local sound assets
+- `images/` - optional image assets
+- `assets/` - optional shared assets
 
-The page is self-contained except for p5.js, which is loaded from CDN.
+## Deploy
+
+Upload the `bugnote` folder to any static host. The root entry should be `index.html`.
+
+p5.js is loaded from CDN.
