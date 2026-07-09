@@ -1,16 +1,32 @@
 <!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
-  <title>Constellation Granular Sampler</title>
-  <link rel="stylesheet" href="style.css">
-  <script src="https://cdn.jsdelivr.net/npm/p5@1.9.4/lib/p5.min.js"></script>
-</head>
-<body>
-  <input id="fileInput" class="file-input" type="file" accept="audio/*,.mp3,.wav,.m4a,.aac,.aif,.aiff">
-  <label id="uploadHit" class="upload-hit" for="fileInput" aria-label="open audio file"></label>
-  <div class="veil" aria-hidden="true"></div>
-  <script src="script.js"></script>
-</body>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <title>Bugnote Granular</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main id="world" aria-label="Granular sampler">
+      <canvas id="cloud"></canvas>
+
+      <nav class="effects" aria-label="Effects">
+        <button type="button" data-effect="drift" aria-label="Drift" aria-pressed="false">◌</button>
+        <button type="button" data-effect="reverse" aria-label="Reverse" aria-pressed="false">⌁</button>
+        <button type="button" data-effect="scatter" aria-label="Scatter" aria-pressed="false">ϟ</button>
+        <button type="button" data-effect="freeze" aria-label="Freeze" aria-pressed="false">✣</button>
+      </nav>
+
+      <button id="record" class="record" type="button" aria-label="Record" aria-pressed="false"></button>
+      <a id="save" class="save" hidden aria-label="Save recording">↓</a>
+
+      <input id="audio-file" type="file" accept="audio/*,.wav,.mp3,.m4a,.aac,.aif,.aiff" />
+      <label id="upload" for="audio-file" aria-label="Choose an audio file">＋</label>
+
+      <div id="audio-state" class="sr-only" role="status" aria-live="polite"></div>
+    </main>
+    <script src="https://cdn.jsdelivr.net/npm/p5@1.11.10/lib/p5.min.js"></script>
+    <script src="./script.js"></script>
+  </body>
 </html>

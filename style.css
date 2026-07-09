@@ -1,66 +1,116 @@
-html,
-    body {
-      margin: 0;
-      min-height: 100%;
-      overflow: hidden;
-      background: #6992d9;
-      color: #f2eda7;
-      font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
-      touch-action: none;
-      overscroll-behavior: none;
-      -webkit-user-select: none;
-      -webkit-touch-callout: none;
-      -webkit-tap-highlight-color: transparent;
-      user-select: none;
-    }
+:root {
+  color-scheme: light;
+  --sky: #7398d5;
+  --grass: #7e9f36;
+  --ink: #fff9a8;
+  --white: #fffef0;
+  --active: #f2a45f;
+}
 
-    canvas {
-      display: block;
-      position: fixed;
-      inset: 0;
-    }
+* { box-sizing: border-box; }
 
-    .file-input {
-      position: fixed;
-      left: 50%;
-      top: 50%;
-      width: 112px;
-      height: 112px;
-      transform: translate(-50%, -50%);
-      opacity: 0;
-      pointer-events: auto;
-      z-index: 20;
-      border: 0;
-      border-radius: 999px;
-      background: transparent;
-      color: transparent;
-      font-size: 0;
-      touch-action: manipulation;
-      -webkit-appearance: none;
-      appearance: none;
-    }
+html, body, #world {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+  touch-action: none;
+  background: var(--sky);
+}
 
-    .file-input::-webkit-file-upload-button,
-    .file-input::file-selector-button {
-      opacity: 0;
-      color: transparent;
-      background: transparent;
-      border: 0;
-      font-size: 0;
-    }
+body { font-family: ui-rounded, "SF Pro Rounded", system-ui, sans-serif; }
 
-    .file-input.loaded {
-      pointer-events: none;
-      width: 1px;
-      height: 1px;
-    }
+#cloud { position: fixed; inset: 0; width: 100%; height: 100%; }
 
-    .veil {
-      position: fixed;
-      inset: 0;
-      pointer-events: none;
-      background:
-        radial-gradient(circle at 50% 48%, transparent 0 30%, rgba(146, 171, 221, .16) 54%, rgba(10, 11, 11, .38) 100%),
-        radial-gradient(circle at 50% 82%, rgba(137, 157, 57, .34), transparent 34%);
-      mix-blend-mode: multiply;
-    }
+.effects {
+  position: fixed;
+  z-index: 4;
+  top: max(20px, env(safe-area-inset-top));
+  left: 50%;
+  display: flex;
+  gap: 18px;
+  transform: translateX(-50%);
+}
+
+button, label, a {
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+.effects button, .save {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: color-mix(in srgb, var(--grass) 65%, var(--sky));
+  font: 24px/34px ui-rounded, system-ui, sans-serif;
+  text-align: center;
+  cursor: pointer;
+}
+
+.effects button[aria-pressed="true"] { color: var(--ink); }
+
+#audio-file {
+  position: fixed;
+  width: 1px;
+  height: 1px;
+  left: 50%;
+  bottom: max(26px, env(safe-area-inset-bottom));
+  opacity: 0.001;
+  pointer-events: none;
+}
+
+#upload {
+  position: fixed;
+  z-index: 5;
+  left: 50%;
+  bottom: max(22px, env(safe-area-inset-bottom));
+  width: 38px;
+  height: 38px;
+  transform: translateX(-50%);
+  color: var(--ink);
+  font: 30px/34px ui-rounded, system-ui, sans-serif;
+  text-align: center;
+  cursor: pointer;
+}
+
+.record {
+  position: fixed;
+  z-index: 5;
+  right: max(22px, env(safe-area-inset-right));
+  bottom: max(24px, env(safe-area-inset-bottom));
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--ink);
+  border-radius: 50%;
+  background: transparent;
+}
+
+.record[aria-pressed="true"] { border-color: var(--active); background: var(--active); }
+
+.save {
+  position: fixed;
+  z-index: 5;
+  right: max(62px, calc(env(safe-area-inset-right) + 40px));
+  bottom: max(16px, calc(env(safe-area-inset-bottom) - 8px));
+  text-decoration: none;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 640px) {
+  .effects { gap: 12px; }
+  .effects button { width: 30px; height: 30px; font-size: 21px; }
+}
