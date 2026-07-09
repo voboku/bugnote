@@ -12,7 +12,8 @@
 
   const AudioContextClass = window.AudioContext || window.webkitAudioContext;
   const mobile = matchMedia("(max-width: 700px), (pointer: coarse)").matches;
-  const particleCount = mobile ? 3600 : 8000;
+  const maxParticleCount = mobile ? 2600 : 5600;
+  const minParticleCount = mobile ? 1200 : 2600;
   const particles = [];
   const pointer = { x: -9999, y: -9999, active: false, radius: mobile ? 28 : 22 };
   const params = { grain: 0.11, density: 0.52, pitch: 1, spray: 0.12 };
@@ -32,6 +33,10 @@
   let width = 0;
   let height = 0;
   let dpr = 1;
+  let renderParticleLimit = maxParticleCount;
+  let lastFrameTime = 0;
+  let slowFrames = 0;
+  let fastFrames = 0;
 
   function announce(message) {
     stateNode.textContent = message;
@@ -180,7 +185,10 @@
 
   function initParticles() {
     particles.length = 0;
-    for (let i = 0; i < particleCount; i++) {
+    renderParticleLimit = maxParticleCount;
+    slowFrames = 0;
+    fastFrames = 0;
+    for (let i = 0; i < maxParticleCount; i++) {
       const u = Math.random() * 2 - 1;
       const phi = Math.random() * Math.PI * 2;
       const radius = 0.62 + Math.random() * 0.38;
@@ -203,12 +211,36 @@
   function resize() {
     width = innerWidth;
     height = innerHeight;
-    dpr = Math.min(devicePixelRatio || 1, mobile ? 1.25 : 1.6);
+    dpr = Math.min(devicePixelRatio || 1, mobile ? 1.1 : 1.35);
     canvas.width = Math.round(width * dpr);
     canvas.height = Math.round(height * dpr);
     canvas.style.width = `${width}px`;
     canvas.style.height = `${height}px`;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  function adaptParticleBudget(dt) {
+    if (dt > 38) {
+      slowFrames++;
+      fastFrames = 0;
+    } else if (dt < 22) {
+      fastFrames++;
+      slowFrames = Math.max(0, slowFrames - 1);
+    } else {
+      slowFrames = Math.max(0, slowFrames - 1);
+      fastFrames = 0;
+    }
+
+    if (slowFrames >= 12 && renderParticleLimit > minParticleCount) {
+      renderParticleLimit = Math.max(minParticleCount, Math.floor(renderParticleLimit * 0.82));
+      slowFrames = 0;
+      return;
+    }
+
+    if (fastFrames >= 240 && renderParticleLimit < maxParticleCount) {
+      renderParticleLimit = Math.min(maxParticleCount, Math.ceil(renderParticleLimit * 1.08));
+      fastFrames = 0;
+    }
   }
 
   function drawNebula(cx, cy, type, time) {
@@ -228,6 +260,10 @@
   }
 
   function render(time) {
+    const dt = lastFrameTime ? Math.min(50, time - lastFrameTime) : 16.67;
+    lastFrameTime = time;
+    adaptParticleBudget(dt);
+
     ctx.fillStyle = "#7398d5";
     ctx.fillRect(0, 0, width, height);
     drawNebula(30, 140, "grain", time);
@@ -235,14 +271,17 @@
     drawNebula(30, height - 90, "pitch", time);
     drawNebula(width - 30, height - 90, "spray", time);
 
-    if (!effects.freeze) angle += effects.drift ? 0.004 : 0.0014;
+    if (!effects.freeze) angle += (effects.drift ? 0.004 : 0.0014) * (dt / 16.67);
     const ca = Math.cos(angle);
     const sa = Math.sin(angle);
     const scale = Math.min(width, height) * (mobile ? 0.37 : 0.39);
     const centerX = width * 0.5;
     const centerY = height * 0.53;
 
-    for (const p of particles) {
+    const pointerRadiusSq = pointer.radius * pointer.radius;
+    ctx.fillStyle = "#fff9a8";
+    for (let i = 0; i < renderParticleLimit; i++) {
+      const p = particles[i];
       const xr = p.x * ca - p.z * sa;
       const zr = p.x * sa + p.z * ca;
       const perspective = 0.78 + (zr + 1) * 0.16;
@@ -250,8 +289,9 @@
       const homeY = centerY + p.y * scale * perspective;
       const dx = homeX + p.ox - pointer.x;
       const dy = homeY + p.oy - pointer.y;
-      const dist = Math.hypot(dx, dy);
-      if (pointer.active && dist < pointer.radius) {
+      const distSq = dx * dx + dy * dy;
+      if (pointer.active && distSq < pointerRadiusSq) {
+        const dist = Math.sqrt(distSq);
         const force = (1 - dist / pointer.radius) * (effects.scatter ? 8 : 4.2);
         p.vx += dx / Math.max(1, dist) * force;
         p.vy += dy / Math.max(1, dist) * force;
@@ -266,9 +306,10 @@
       p.sx = homeX + p.ox;
       p.sy = homeY + p.oy;
       const alpha = 0.35 + perspective * 0.48;
-      ctx.fillStyle = `rgba(255,249,168,${alpha})`;
+      ctx.globalAlpha = alpha;
       ctx.fillRect(p.sx, p.sy, p.size, p.size);
     }
+    ctx.globalAlpha = 1;
 
     if (pointer.active) {
       ctx.fillStyle = "rgba(255,254,240,.72)";
