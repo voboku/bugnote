@@ -333,11 +333,22 @@
     if (!touchSize) return;
     touchSize.value = String(pointer.radius);
     if (touchSizeValue) touchSizeValue.textContent = String(Math.round(pointer.radius));
+    updateTouchSizeVisual();
   }
 
   function updateTouchSize(event) {
     pointer.radius = Number(event.target.value);
     if (touchSizeValue) touchSizeValue.textContent = event.target.value;
+    updateTouchSizeVisual();
+  }
+
+  function updateTouchSizeVisual() {
+    if (!touchSize) return;
+    const min = Number(touchSize.min);
+    const max = Number(touchSize.max);
+    const progress = Math.max(0, Math.min(1, (pointer.radius - min) / Math.max(1, max - min)));
+    const root = touchSize.closest(".touch-size");
+    root?.style.setProperty("--touch-fill", `${(progress * 100).toFixed(1)}%`);
   }
 
   async function toggleRecording() {

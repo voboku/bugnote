@@ -19,9 +19,11 @@
       </nav>
 
       <div class="touch-size" aria-label="Touch circle size">
-        <span aria-hidden="true">○</span>
-        <input id="touch-size" type="range" min="10" max="52" value="22" />
-        <output id="touch-size-value" for="touch-size">22</output>
+        <label class="touch-size-path">
+          <input id="touch-size" type="range" min="8" max="140" value="22" aria-label="Touch circle size" />
+          <span class="touch-size-dots" aria-hidden="true"></span>
+        </label>
+        <output id="touch-size-value" for="touch-size" aria-hidden="true"></output>
       </div>
 
       <button id="record" class="record" type="button" aria-label="Record" aria-pressed="false"></button>

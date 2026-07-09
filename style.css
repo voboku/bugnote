@@ -60,32 +60,68 @@ button, label, a {
   z-index: 4;
   top: max(58px, calc(env(safe-area-inset-top) + 38px));
   left: 50%;
-  display: grid;
-  grid-template-columns: 18px 96px 28px;
-  gap: 8px;
-  align-items: center;
+  display: block;
   transform: translateX(-50%);
+  --touch-fill: 11%;
+  --touch-dot: 4px;
+  --touch-track: 146px;
   color: color-mix(in srgb, var(--grass) 72%, var(--ink));
   font: 14px/1 ui-rounded, system-ui, sans-serif;
   pointer-events: auto;
 }
 
-.touch-size span {
-  color: var(--ink);
-  font-size: 18px;
-  line-height: 1;
+.touch-size-path {
+  position: relative;
+  display: block;
+  width: var(--touch-track);
+  height: 30px;
+}
+
+.touch-size-path::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle, color-mix(in srgb, var(--ink) 76%, transparent) 0 var(--touch-dot), transparent calc(var(--touch-dot) + .4px))
+    1px 13px / 12px 12px repeat-x;
+  opacity: 0.36;
+}
+
+.touch-size-dots {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--touch-fill);
+  overflow: hidden;
+  pointer-events: none;
+  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--ink) 42%, transparent));
+}
+
+.touch-size-dots::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: var(--touch-track);
+  background:
+    radial-gradient(circle, var(--ink) 0 var(--touch-dot), transparent calc(var(--touch-dot) + .4px))
+    1px 13px / 12px 12px repeat-x;
 }
 
 .touch-size input {
-  width: 96px;
-  accent-color: var(--ink);
+  position: absolute;
+  inset: 0;
+  width: var(--touch-track);
+  height: 30px;
+  margin: 0;
+  opacity: 0.001;
   cursor: pointer;
 }
 
 .touch-size output {
-  color: color-mix(in srgb, var(--grass) 55%, var(--ink));
-  font-variant-numeric: tabular-nums;
-  text-align: right;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
 }
 
 #audio-file {
@@ -151,9 +187,9 @@ button, label, a {
   .effects button { width: 30px; height: 30px; font-size: 21px; }
   .touch-size {
     top: max(54px, calc(env(safe-area-inset-top) + 34px));
-    grid-template-columns: 16px 78px 24px;
-    gap: 6px;
+    --touch-track: 122px;
   }
 
-  .touch-size input { width: 78px; }
+  .touch-size-path,
+  .touch-size input { width: var(--touch-track); }
 }
