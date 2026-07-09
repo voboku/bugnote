@@ -37,6 +37,7 @@ const TWO_PI_CONST = Math.PI * 2;
     let message = "";
     let messageUntil = 0;
     let firstSoundTouch = false;
+    let audioUnlocked = false;
 
     const settings = {
       grain: 0.42,
@@ -70,7 +71,12 @@ const TWO_PI_CONST = Math.PI * 2;
       pixelDensity(1);
       frameRate(45);
       fileInput = document.getElementById("fileInput");
+      fileInput.addEventListener("pointerdown", unlockAudioFromGesture, { passive: true });
+      fileInput.addEventListener("touchstart", unlockAudioFromGesture, { passive: true });
+      fileInput.addEventListener("mousedown", unlockAudioFromGesture);
       fileInput.addEventListener("change", handleFileSelect);
+      document.addEventListener("touchstart", unlockAudioFromGesture, { passive: true });
+      document.addEventListener("pointerdown", unlockAudioFromGesture, { passive: true });
       window.addEventListener("dragover", (event) => event.preventDefault());
       window.addEventListener("drop", handleDrop);
       window.addEventListener("orientationchange", () => setTimeout(windowResized, 250));
@@ -753,14 +759,40 @@ const TWO_PI_CONST = Math.PI * 2;
         masterCompressor.ratio.value = 3.5;
         masterCompressor.attack.value = 0.004;
         masterCompressor.release.value = 0.18;
-        recordingDestination = audioCtx.createMediaStreamDestination();
         masterGain.connect(masterCompressor);
         masterCompressor.connect(audioCtx.destination);
-        masterCompressor.connect(recordingDestination);
+        if (audioCtx.createMediaStreamDestination) {
+          recordingDestination = audioCtx.createMediaStreamDestination();
+          masterCompressor.connect(recordingDestination);
+        }
       }
       if (audioCtx.state !== "running") {
         await audioCtx.resume();
       }
+    }
+
+    function unlockAudioFromGesture() {
+      userStartAudio().then(() => {
+        if (!audioCtx || audioUnlocked) return;
+        const buffer = audioCtx.createBuffer(1, 1, audioCtx.sampleRate);
+        const source = audioCtx.createBufferSource();
+        const gain = audioCtx.createGain();
+        gain.gain.value = 0;
+        source.buffer = buffer;
+        source.connect(gain).connect(audioCtx.destination);
+        source.start(0);
+        audioUnlocked = true;
+      }).catch(() => {});
+    }
+
+    function decodeAudioDataCompat(arrayBuffer) {
+      return new Promise((resolve, reject) => {
+        const data = arrayBuffer.slice(0);
+        const result = audioCtx.decodeAudioData(data, resolve, reject);
+        if (result && typeof result.then === "function") {
+          result.then(resolve).catch(reject);
+        }
+      });
     }
 
     async function toggleRecording() {
@@ -879,7 +911,7 @@ const TWO_PI_CONST = Math.PI * 2;
         messageUntil = millis() + 1200;
         const arrayBuffer = await file.arrayBuffer();
         await userStartAudio();
-        audioBuffer = await audioCtx.decodeAudioData(arrayBuffer.slice(0));
+        audioBuffer = await decodeAudioDataCompat(arrayBuffer);
         loadedName = file.name.replace(/\.[^.]+$/, "");
         chopAudio();
         reassignSlices();
