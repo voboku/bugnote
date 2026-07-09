@@ -38,6 +38,7 @@ const TWO_PI_CONST = Math.PI * 2;
     let messageUntil = 0;
     let firstSoundTouch = false;
     let audioUnlocked = false;
+    let lastDirectTrigger = -9999;
 
     const settings = {
       grain: 0.42,
@@ -359,6 +360,17 @@ const TWO_PI_CONST = Math.PI * 2;
       source.stop(startTime + duration * 0.78 + 0.05);
     }
 
+    async function triggerDirectTouch(x, y, amount = 0.72) {
+      if (!audioBuffer || !slices.length) return;
+      const nowMs = millis();
+      if (nowMs - lastDirectTrigger < 120) return;
+      await userStartAudio();
+      if (!audioCtx || audioCtx.state !== "running") return;
+      lastDirectTrigger = nowMs;
+      const sliceIndex = constrain(Math.floor(map(x, 0, width, 0, slices.length)), 0, slices.length - 1);
+      triggerSlice(sliceIndex, x, y, amount);
+    }
+
     function drawControls(dt) {
       const pad = Math.max(74, Math.min(width, height) * 0.12);
       const t = millis() * 0.001;
@@ -671,6 +683,7 @@ const TWO_PI_CONST = Math.PI * 2;
       const pt = eventPoint(event);
       setPointer("touch", pt.x, pt.y);
       handleControlTouch(pt.x, pt.y);
+      triggerDirectTouch(pt.x, pt.y, 0.58);
       return false;
     }
 
@@ -689,6 +702,7 @@ const TWO_PI_CONST = Math.PI * 2;
     function mouseDragged() {
       setPointer("mouse", mouseX, mouseY);
       handleControlTouch(mouseX, mouseY);
+      triggerDirectTouch(mouseX, mouseY, 0.58);
       return false;
     }
 
@@ -719,7 +733,9 @@ const TWO_PI_CONST = Math.PI * 2;
       }
       if (dist(x, y, width / 2, height / 2) < 74) {
         openFilePicker();
+        return;
       }
+      triggerDirectTouch(x, y, 0.78);
     }
 
     function isRecorderHit(x, y) {
@@ -930,6 +946,7 @@ const TWO_PI_CONST = Math.PI * 2;
         reassignSlices();
         prepareFileInputForLoadedState();
         unlockAudioFromGesture();
+        setTimeout(() => triggerDirectTouch(width * 0.5, height * 0.5, 0.82), 120);
         message = loadedName ? `${loadedName} lives in the cloud` : "sound lives in the cloud";
         messageUntil = millis() + 2600;
       } catch (error) {
