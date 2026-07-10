@@ -21,7 +21,12 @@ html, body, #world {
 
 body { font-family: ui-rounded, "SF Pro Rounded", system-ui, sans-serif; }
 
-#cloud { position: fixed; inset: 0; width: 100%; height: 100%; }
+#cloud {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
 
 .effects {
   position: fixed;
@@ -39,6 +44,7 @@ button, label, a {
 }
 
 .effects button, .save {
+  position: relative;
   width: 34px;
   height: 34px;
   padding: 0;
@@ -48,11 +54,32 @@ button, label, a {
   font: 24px/34px ui-rounded, system-ui, sans-serif;
   text-align: center;
   cursor: pointer;
+  --effect-amount: .5;
 }
 
 .effects button[aria-pressed="true"] {
   color: var(--ink);
   text-shadow: 0 0 10px color-mix(in srgb, var(--ink) 70%, transparent);
+}
+
+.effects button::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -3px;
+  width: calc(6px + var(--effect-amount) * 24px);
+  height: 4px;
+  transform: translateX(-50%);
+  background:
+    radial-gradient(circle, var(--ink) 0 1.4px, transparent 1.8px)
+    0 1px / 6px 4px repeat-x;
+  opacity: .28;
+  pointer-events: none;
+}
+
+.effects button[aria-pressed="true"]::after {
+  opacity: calc(.38 + var(--effect-amount) * .58);
+  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--ink) 48%, transparent));
 }
 
 .touch-size {
@@ -65,8 +92,6 @@ button, label, a {
   --touch-fill: 11%;
   --touch-dot: 4px;
   --touch-track: 146px;
-  color: color-mix(in srgb, var(--grass) 72%, var(--ink));
-  font: 14px/1 ui-rounded, system-ui, sans-serif;
   pointer-events: auto;
 }
 
@@ -124,6 +149,66 @@ button, label, a {
   opacity: 0;
 }
 
+.chop-count {
+  position: fixed;
+  z-index: 4;
+  top: max(86px, calc(env(safe-area-inset-top) + 66px));
+  left: 50%;
+  display: block;
+  transform: translateX(-50%);
+  --chop-fill: 100%;
+  --chop-track: 112px;
+  pointer-events: auto;
+}
+
+.chop-count-path {
+  position: relative;
+  display: block;
+  width: var(--chop-track);
+  height: 22px;
+}
+
+.chop-count-path::before,
+.chop-count-dots::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: var(--chop-track);
+  background:
+    radial-gradient(circle, var(--ink) 0 1.7px, transparent 2.1px)
+    1px 9px / 8px 8px repeat-x;
+}
+
+.chop-count-path::before { opacity: 0.2; }
+
+.chop-count-dots {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--chop-fill);
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0.76;
+  filter: drop-shadow(0 0 3px color-mix(in srgb, var(--ink) 38%, transparent));
+}
+
+.chop-count input {
+  position: absolute;
+  inset: 0;
+  width: var(--chop-track);
+  height: 22px;
+  margin: 0;
+  opacity: 0.001;
+  cursor: pointer;
+}
+
+.chop-count output {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+}
+
 #audio-file {
   position: fixed;
   width: 1px;
@@ -160,7 +245,10 @@ button, label, a {
   background: transparent;
 }
 
-.record[aria-pressed="true"] { border-color: var(--active); background: var(--active); }
+.record[aria-pressed="true"] {
+  border-color: var(--active);
+  background: var(--active);
+}
 
 .save {
   position: fixed;
@@ -189,7 +277,8 @@ button, label, a {
     top: max(54px, calc(env(safe-area-inset-top) + 34px));
     --touch-track: 122px;
   }
-
-  .touch-size-path,
-  .touch-size input { width: var(--touch-track); }
+  .chop-count {
+    top: max(82px, calc(env(safe-area-inset-top) + 62px));
+    --chop-track: 100px;
+  }
 }

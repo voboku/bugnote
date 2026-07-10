@@ -5,17 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <title>Bugnote Granular</title>
-    <link rel="stylesheet" href="./style.css" />
+    <link rel="stylesheet" href="./style.css?v=20260710-10" />
   </head>
   <body>
     <main id="world" aria-label="Granular sampler">
       <canvas id="cloud"></canvas>
 
       <nav class="effects" aria-label="Effects">
-        <button type="button" data-effect="drift" aria-label="Drift" aria-pressed="false">◎</button>
-        <button type="button" data-effect="reverse" aria-label="Reverse" aria-pressed="false">⌁</button>
-        <button type="button" data-effect="scatter" aria-label="Scatter" aria-pressed="false">ϟ</button>
-        <button type="button" data-effect="freeze" aria-label="Freeze" aria-pressed="false">✣</button>
+        <button type="button" data-effect="stretch" aria-label="Stretch" aria-pressed="false">↔</button>
+        <button type="button" data-effect="ambient" aria-label="Ambient" aria-pressed="false">∞</button>
+        <button type="button" data-effect="pitch" aria-label="Pitch" aria-pressed="false">⌁</button>
+        <button type="button" data-effect="spray" aria-label="Spray" aria-pressed="false">✣</button>
       </nav>
 
       <div class="touch-size" aria-label="Touch circle size">
@@ -26,6 +26,14 @@
         <output id="touch-size-value" for="touch-size" aria-hidden="true"></output>
       </div>
 
+      <div class="chop-count" aria-label="Chop count">
+        <label class="chop-count-path">
+          <input id="chop-count" type="range" min="128" max="512" step="64" value="512" aria-label="Chop count" />
+          <span class="chop-count-dots" aria-hidden="true"></span>
+        </label>
+        <output id="chop-count-value" for="chop-count" aria-hidden="true"></output>
+      </div>
+
       <button id="record" class="record" type="button" aria-label="Record" aria-pressed="false"></button>
       <a id="save" class="save" hidden aria-label="Save recording">↓</a>
 
@@ -34,7 +42,6 @@
 
       <div id="audio-state" class="sr-only" role="status" aria-live="polite"></div>
     </main>
-    <script src="https://cdn.jsdelivr.net/npm/p5@1.11.10/lib/p5.min.js"></script>
-    <script src="./script.js"></script>
+    <script src="./script.js?v=20260710-10"></script>
   </body>
 </html>

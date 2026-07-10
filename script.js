@@ -11,25 +11,49 @@
   const effectButtons = [...document.querySelectorAll("[data-effect]")];
   const touchSize = document.querySelector("#touch-size");
   const touchSizeValue = document.querySelector("#touch-size-value");
+  const chopCountInput = document.querySelector("#chop-count");
+  const chopCountValue = document.querySelector("#chop-count-value");
 
   const AudioContextClass = window.AudioContext || window.webkitAudioContext;
   const mobile = matchMedia("(max-width: 700px), (pointer: coarse)").matches;
-  const maxParticleCount = mobile ? 2600 : 5600;
-  const minParticleCount = mobile ? 1200 : 2600;
+  const maxParticleCount = mobile ? 3600 : 8000;
+  const minParticleCount = maxParticleCount;
+  const grainStartIntervalMs = 50;
+  let sliceCount = 512;
   const particles = [];
-  const defaultTouchRadius = mobile ? 24 : 18;
-  const pointer = { x: -9999, y: -9999, active: false, radius: defaultTouchRadius };
-  const params = { grain: 0.11, density: 0.52, pitch: 1, spray: 0.12 };
-  const effects = { drift: false, reverse: false, scatter: false, freeze: false };
+  const pointer = {
+    x: -9999,
+    y: -9999,
+    active: false,
+    soundActive: false,
+    down: false,
+    touching: false,
+    lastMoved: 0,
+    radius: mobile ? 24 : 18
+  };
+  const baseParams = { stretch: 0, ambient: 0, pitch: 0, spray: 0 };
+  const params = { stretch: 0.45, ambient: 0.5, pitch: 1, spray: 0.12 };
+  const paramEnabled = { stretch: false, ambient: false, pitch: false, spray: false };
+  const controlRanges = {
+    stretch: [0, 1],
+    ambient: [0, 1],
+    pitch: [0.55, 1.85],
+    spray: [0, 0.48]
+  };
 
   let audioContext = null;
   let master = null;
   let compressor = null;
+  let ambientInput = null;
+  let ambientDelay = null;
+  let ambientFeedback = null;
+  let ambientFilter = null;
+  let ambientWet = null;
   let recordDestination = null;
   let decoded = null;
   let slices = [];
-  let lastTrigger = 0;
   let activeVoices = 0;
+  let lastGrainStartedAt = -Infinity;
   let recorder = null;
   let recordedChunks = [];
   let angle = 0;
@@ -40,6 +64,9 @@
   let lastFrameTime = 0;
   let slowFrames = 0;
   let fastFrames = 0;
+  let audioUnlocking = false;
+  let effectDrag = null;
+  let activeNebula = null;
 
   function announce(message) {
     stateNode.textContent = message;
@@ -64,6 +91,19 @@
     compressor.release.value = 0.18;
     master.connect(compressor);
     compressor.connect(audioContext.destination);
+    ambientInput = audioContext.createGain();
+    ambientDelay = audioContext.createDelay(3);
+    ambientFeedback = audioContext.createGain();
+    ambientFilter = audioContext.createBiquadFilter();
+    ambientWet = audioContext.createGain();
+    ambientFilter.type = "lowpass";
+    ambientInput.connect(ambientDelay);
+    ambientDelay.connect(ambientFilter);
+    ambientFilter.connect(ambientWet);
+    ambientWet.connect(master);
+    ambientFilter.connect(ambientFeedback);
+    ambientFeedback.connect(ambientDelay);
+    updateAmbientGraph(true);
     if (audioContext.createMediaStreamDestination) {
       recordDestination = audioContext.createMediaStreamDestination();
       compressor.connect(recordDestination);
@@ -72,6 +112,8 @@
   }
 
   async function unlockAudio() {
+    if (audioUnlocking) return audioContext?.state === "running";
+    audioUnlocking = true;
     try {
       buildAudioGraph();
       if (audioContext.state !== "running") await audioContext.resume();
@@ -86,7 +128,13 @@
       console.error("Audio unlock failed", error);
       announce("audio-error");
       return false;
+    } finally {
+      audioUnlocking = false;
     }
+  }
+
+  function wakeAudioSoon() {
+    unlockAudio().catch(() => {});
   }
 
   function decodeAudio(arrayBuffer) {
@@ -114,13 +162,45 @@
   }
 
   function makeSlices() {
-    const count = Math.max(128, Math.min(512, Math.round(decoded.duration * 22)));
-    const length = Math.max(0.035, Math.min(0.32, params.grain));
-    const usable = Math.max(0, decoded.duration - length);
-    slices = Array.from({ length: count }, (_, index) => ({
-      start: usable * index / Math.max(1, count - 1),
-      duration: Math.min(length, decoded.duration)
+    const sliceDuration = decoded.duration / sliceCount;
+    slices = Array.from({ length: sliceCount }, (_, index) => ({
+      start: index * sliceDuration,
+      duration: sliceDuration
     }));
+    particles.forEach(particle => {
+      particle.sliceIndex = particle.index % sliceCount;
+      particle.lastPlayed = -Infinity;
+      particle.insidePointer = false;
+    });
+  }
+
+  function valueToNorm(name) {
+    const [min, max] = controlRanges[name];
+    return clamp01((params[name] - min) / Math.max(0.0001, max - min));
+  }
+
+  function normToValue(name, value) {
+    const [min, max] = controlRanges[name];
+    return min + clamp01(value) * (max - min);
+  }
+
+  function effectiveParam(name) {
+    return paramEnabled[name] ? params[name] : baseParams[name];
+  }
+
+  function updateAmbientGraph(immediate = false) {
+    if (!audioContext || !ambientDelay || !ambientFeedback || !ambientFilter || !ambientWet) return;
+    const amount = effectiveParam("ambient");
+    const now = audioContext.currentTime;
+    const timeConstant = immediate ? 0.001 : 0.04;
+    ambientWet.gain.cancelScheduledValues(now);
+    ambientDelay.delayTime.cancelScheduledValues(now);
+    ambientFeedback.gain.cancelScheduledValues(now);
+    ambientFilter.frequency.cancelScheduledValues(now);
+    ambientWet.gain.setTargetAtTime(amount * 0.72, now, timeConstant);
+    ambientDelay.delayTime.setTargetAtTime(0.2 + amount * 0.62, now, timeConstant);
+    ambientFeedback.gain.setTargetAtTime(0.12 + amount * 0.46, now, timeConstant);
+    ambientFilter.frequency.setTargetAtTime(5200 - amount * 3500, now, timeConstant);
   }
 
   async function loadFile(file) {
@@ -131,10 +211,11 @@
       const bytes = await readFile(file);
       decoded = await decodeAudio(bytes);
       makeSlices();
+      lastGrainStartedAt = -Infinity;
       fileInput.value = "";
       upload.textContent = "↻";
       announce("ready");
-      await unlockAudio();
+      wakeAudioSoon();
     } catch (error) {
       console.error("Audio file could not be decoded", error);
       announce("decode-error");
@@ -146,44 +227,85 @@
     if (typeof audioContext.createStereoPanner === "function") {
       const pan = audioContext.createStereoPanner();
       pan.pan.value = panValue;
-      source.connect(gain).connect(pan).connect(master);
+      source.connect(gain);
+      gain.connect(pan);
+      pan.connect(master);
+      if (ambientInput) pan.connect(ambientInput);
       return;
     }
     const pan = audioContext.createPanner();
     pan.panningModel = "equalpower";
     if (pan.positionX) pan.positionX.value = panValue;
     else pan.setPosition(panValue, 0, 1 - Math.abs(panValue));
-    source.connect(gain).connect(pan).connect(master);
+    source.connect(gain);
+    gain.connect(pan);
+    pan.connect(master);
+    if (ambientInput) pan.connect(ambientInput);
   }
 
   function triggerGrain(particle, distance) {
-    if (!decoded || !slices.length || !audioContext || audioContext.state !== "running") return;
-    const nowMs = performance.now();
-    const cooldown = 14 + (1 - params.density) * 85;
-    if (nowMs - lastTrigger < cooldown || activeVoices >= (mobile ? 18 : 32)) return;
-    lastTrigger = nowMs;
+    if (!decoded || !slices.length || !audioContext) return false;
+    if (audioContext.state !== "running") {
+      wakeAudioSoon();
+      return false;
+    }
+    let source = null;
+    let gain = null;
+    let releaseVoice = null;
+    try {
+      const stretch = effectiveParam("stretch");
+      const pitch = effectiveParam("pitch");
+      const spray = effectiveParam("spray");
+      const voiceLimit = mobile ? 4 : 6;
+      if (activeVoices >= voiceLimit) return false;
 
-    const source = audioContext.createBufferSource();
-    const gain = audioContext.createGain();
-    const slice = slices[particle.index % slices.length];
-    const now = audioContext.currentTime;
-    const duration = Math.min(slice.duration, decoded.duration);
-    const yPitch = 0.68 + 0.82 * (1 - particle.sy / Math.max(1, height));
-    source.buffer = decoded;
-    source.playbackRate.value = Math.max(0.25, Math.min(3, params.pitch * yPitch));
-    const level = Math.max(0.025, (1 - distance / pointer.radius) * 0.42);
-    const attack = Math.min(0.018, duration * 0.3);
-    const release = Math.min(0.055, duration * 0.45);
-    gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(level, now + attack);
-    gain.gain.setValueAtTime(level, Math.max(now + attack, now + duration - release));
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
-    connectPan(source, gain, (particle.sx / Math.max(1, width)) * 2 - 1);
-    activeVoices++;
-    source.onended = () => { activeVoices = Math.max(0, activeVoices - 1); };
-    const offset = effects.reverse ? Math.max(0, decoded.duration - slice.start - duration) : slice.start;
-    source.start(now, Math.max(0, Math.min(offset, decoded.duration - 0.001)), duration);
-    source.stop(now + duration + 0.02);
+      source = audioContext.createBufferSource();
+      gain = audioContext.createGain();
+      const slice = slices[particle.sliceIndex];
+      const now = audioContext.currentTime;
+      const proximity = clamp01(1 - distance / pointer.radius);
+      const baseWindow = 0.12 + proximity * 0.1;
+      const desiredDuration = Math.min(1.8, baseWindow * (1 + stretch * 5));
+      const sprayOffset = (Math.random() * 2 - 1) * spray * slice.duration * 1.35;
+      const rawOffset = slice.start + sprayOffset;
+      const maxOffset = Math.max(0, decoded.duration - Math.min(desiredDuration, decoded.duration));
+      const offset = Math.max(0, Math.min(rawOffset, maxOffset));
+      const availableDuration = Math.max(0.001, decoded.duration - offset);
+      const duration = Math.min(availableDuration, desiredDuration);
+      const sprayPitch = 1 + (Math.random() * 2 - 1) * spray * 0.35;
+      const pitchMultiplier = pitch > 0 ? pitch : 1;
+      source.buffer = decoded;
+      source.playbackRate.value = Math.max(0.5, Math.min(1.8, pitchMultiplier * sprayPitch));
+      const envelopeDuration = Math.min(3, duration / source.playbackRate.value);
+      const level = Math.max(0.025, proximity * 0.42);
+      const envelope = new Float32Array(64);
+      for (let i = 0; i < envelope.length; i++) {
+        const phase = i / (envelope.length - 1);
+        const cosineWindow = Math.sin(Math.PI * phase) ** 2;
+        envelope[i] = cosineWindow * level;
+      }
+      gain.gain.setValueCurveAtTime(envelope, now, envelopeDuration);
+      connectPan(source, gain, (particle.sx / Math.max(1, width)) * 2 - 1);
+
+      let released = false;
+      releaseVoice = () => {
+        if (released) return;
+        released = true;
+        activeVoices = Math.max(0, activeVoices - 1);
+      };
+      activeVoices++;
+      source.onended = releaseVoice;
+      source.start(now, offset, duration);
+      source.stop(now + envelopeDuration + 0.02);
+      window.setTimeout(releaseVoice, Math.ceil((envelopeDuration + 0.5) * 1000));
+      return true;
+    } catch (error) {
+      releaseVoice?.();
+      try { source?.disconnect(); } catch (_) {}
+      try { gain?.disconnect(); } catch (_) {}
+      console.error("Grain playback failed", error);
+      return false;
+    }
   }
 
   function initParticles() {
@@ -206,6 +328,9 @@
         vy: 0,
         sx: 0,
         sy: 0,
+        sliceIndex: i % sliceCount,
+        lastPlayed: -Infinity,
+        insidePointer: false,
         size: 0.55 + Math.random() * 1.45
       });
     }
@@ -214,7 +339,7 @@
   function resize() {
     width = innerWidth;
     height = innerHeight;
-    dpr = Math.min(devicePixelRatio || 1, mobile ? 1.1 : 1.35);
+    dpr = Math.min(devicePixelRatio || 1, mobile ? 1.25 : 1.6);
     canvas.width = Math.round(width * dpr);
     canvas.height = Math.round(height * dpr);
     canvas.style.width = `${width}px`;
@@ -233,31 +358,68 @@
       slowFrames = Math.max(0, slowFrames - 1);
       fastFrames = 0;
     }
-
     if (slowFrames >= 12 && renderParticleLimit > minParticleCount) {
       renderParticleLimit = Math.max(minParticleCount, Math.floor(renderParticleLimit * 0.82));
       slowFrames = 0;
       return;
     }
-
     if (fastFrames >= 240 && renderParticleLimit < maxParticleCount) {
       renderParticleLimit = Math.min(maxParticleCount, Math.ceil(renderParticleLimit * 1.08));
       fastFrames = 0;
     }
   }
 
+  function nebulaCenter(name) {
+    if (name === "stretch") return { x: 30, y: 140 };
+    if (name === "ambient") return { x: width - 30, y: 140 };
+    if (name === "pitch") return { x: 30, y: height - 90 };
+    return { x: width - 30, y: height - 90 };
+  }
+
+  function findNebulaAt(x, y) {
+    const names = ["stretch", "ambient", "pitch", "spray"];
+    const radius = mobile ? 108 : 126;
+    for (const name of names) {
+      const center = nebulaCenter(name);
+      const dx = x - center.x;
+      const dy = y - center.y;
+      if (dx * dx + dy * dy < radius * radius) return name;
+    }
+    return null;
+  }
+
+  function updateNebulaControl(name, x, y) {
+    const center = nebulaCenter(name);
+    const radius = mobile ? 108 : 126;
+    const dx = x - center.x;
+    const dy = y - center.y;
+    const radial = clamp01(Math.sqrt(dx * dx + dy * dy) / radius);
+    let amount = clamp01(0.5 - dy / (radius * 1.35));
+    if (name === "stretch") amount = radial;
+    if (name === "ambient") amount = radial;
+    if (name === "spray") amount = radial;
+    if (name === "pitch") amount = clamp01(0.5 - dy / (radius * 1.2));
+    paramEnabled[name] = true;
+    params[name] = normToValue(name, amount);
+    if (name === "ambient") updateAmbientGraph();
+    syncAllEffectVisuals();
+  }
+
   function drawNebula(cx, cy, type, time) {
-    ctx.fillStyle = "rgba(255,249,168,.28)";
-    const points = type === "density" ? 58 : 34;
+    const amount = paramEnabled[type] ? valueToNorm(type) : 0.08;
+    ctx.fillStyle = `rgba(255,249,168,${0.16 + amount * 0.26})`;
+    const points = Math.round((type === "ambient" ? 42 : 26) + amount * (type === "ambient" ? 52 : 36));
     for (let i = 0; i < points; i++) {
       const seed = i * 9.37;
-      const a = seed + time * 0.00014;
-      let rx = 25 + (i % 9) * 4;
-      let ry = 25 + (i % 7) * 4;
-      if (type === "pitch") { rx *= 0.45; ry *= 1.7; }
-      if (type === "spray") { rx *= 1.45; ry *= 1.25; }
+      const a = seed + time * (0.00008 + amount * 0.0002);
+      let rx = 18 + amount * 16 + (i % 9) * (2.8 + amount * 2.2);
+      let ry = 18 + amount * 16 + (i % 7) * (2.8 + amount * 2.2);
+      if (type === "stretch") { rx *= 1.35 + amount * 1.8; ry *= 0.48 + amount * 0.18; }
+      if (type === "ambient") { rx *= 1.05 + amount * 1.25; ry *= 1.05 + amount * 1.25; }
+      if (type === "pitch") { rx *= 0.42; ry *= 1.35 + amount * 0.85; }
+      if (type === "spray") { rx *= 1.1 + amount * 0.85; ry *= 1.05 + amount * 0.58; }
       ctx.beginPath();
-      ctx.arc(cx + Math.cos(a) * rx, cy + Math.sin(a * 1.17) * ry, 0.7 + i % 3 * 0.35, 0, Math.PI * 2);
+      ctx.arc(cx + Math.cos(a) * rx, cy + Math.sin(a * 1.17) * ry, 0.55 + amount * 0.75 + i % 3 * 0.25, 0, Math.PI * 2);
       ctx.fill();
     }
   }
@@ -266,22 +428,23 @@
     const dt = lastFrameTime ? Math.min(50, time - lastFrameTime) : 16.67;
     lastFrameTime = time;
     adaptParticleBudget(dt);
-
     ctx.fillStyle = "#7398d5";
     ctx.fillRect(0, 0, width, height);
-    drawNebula(30, 140, "grain", time);
-    drawNebula(width - 30, 140, "density", time);
-    drawNebula(30, height - 90, "pitch", time);
-    drawNebula(width - 30, height - 90, "spray", time);
+    drawNebula(nebulaCenter("stretch").x, nebulaCenter("stretch").y, "stretch", time);
+    drawNebula(nebulaCenter("ambient").x, nebulaCenter("ambient").y, "ambient", time);
+    drawNebula(nebulaCenter("pitch").x, nebulaCenter("pitch").y, "pitch", time);
+    drawNebula(nebulaCenter("spray").x, nebulaCenter("spray").y, "spray", time);
 
-    if (!effects.freeze) angle += (effects.drift ? 0.004 : 0.0014) * (dt / 16.67);
+    angle += 0.0014 * (dt / 16.67);
     const ca = Math.cos(angle);
     const sa = Math.sin(angle);
     const scale = Math.min(width, height) * (mobile ? 0.37 : 0.39);
     const centerX = width * 0.5;
     const centerY = height * 0.53;
-
     const pointerRadiusSq = pointer.radius * pointer.radius;
+    const audibleCandidates = [];
+    const frameNow = performance.now();
+
     ctx.fillStyle = "#fff9a8";
     for (let i = 0; i < renderParticleLimit; i++) {
       const p = particles[i];
@@ -293,12 +456,18 @@
       const dx = homeX + p.ox - pointer.x;
       const dy = homeY + p.oy - pointer.y;
       const distSq = dx * dx + dy * dy;
-      if (pointer.active && distSq < pointerRadiusSq) {
+      if (pointer.active && distSq > 0.1 && distSq < pointerRadiusSq) {
         const dist = Math.sqrt(distSq);
-        const force = (1 - dist / pointer.radius) * (effects.scatter ? 8 : 4.2);
+        const force = (1 - dist / pointer.radius) * 4.2;
         p.vx += dx / Math.max(1, dist) * force;
         p.vy += dy / Math.max(1, dist) * force;
-        if (Math.random() < params.density * 0.1) triggerGrain(p, dist);
+        const particleCooldown = 120;
+        if (pointer.soundActive && !p.insidePointer && frameNow - p.lastPlayed >= particleCooldown) {
+          audibleCandidates.push({ particle: p, distance: dist });
+        }
+        if (!pointer.soundActive) p.insidePointer = false;
+      } else {
+        p.insidePointer = false;
       }
       p.vx += -p.ox * 0.025;
       p.vy += -p.oy * 0.025;
@@ -308,25 +477,90 @@
       p.oy += p.vy;
       p.sx = homeX + p.ox;
       p.sy = homeY + p.oy;
-      const alpha = 0.35 + perspective * 0.48;
-      ctx.globalAlpha = alpha;
+      ctx.globalAlpha = 0.35 + perspective * 0.48;
       ctx.fillRect(p.sx, p.sy, p.size, p.size);
+    }
+    if (audibleCandidates.length > 0) {
+      audibleCandidates.sort((a, b) => a.distance - b.distance);
+      if (frameNow - lastGrainStartedAt >= grainStartIntervalMs) {
+        for (const candidate of audibleCandidates) {
+          if (triggerGrain(candidate.particle, candidate.distance)) {
+            candidate.particle.lastPlayed = frameNow;
+            candidate.particle.insidePointer = true;
+            lastGrainStartedAt = frameNow;
+            break;
+          }
+        }
+      }
     }
     ctx.globalAlpha = 1;
 
-    if (pointer.active) {
-      ctx.fillStyle = "rgba(255,254,240,.72)";
-      ctx.beginPath();
-      ctx.arc(pointer.x, pointer.y, 2.4, 0, Math.PI * 2);
-      ctx.fill();
-    }
     requestAnimationFrame(render);
   }
 
   function updatePointer(event, active = true) {
     pointer.x = event.clientX;
     pointer.y = event.clientY;
-    pointer.active = active;
+    pointer.active = true;
+    pointer.soundActive = active;
+    if (active) {
+      pointer.lastMoved = performance.now();
+      if (audioContext && audioContext.state !== "running") wakeAudioSoon();
+    }
+  }
+
+  function isInterfaceTarget(event) {
+    return event.target instanceof Element
+      && !!event.target.closest("#upload, #record, #save, #audio-file, .effects, .touch-size, .chop-count");
+  }
+
+  function beginWorldPointer(event) {
+    if (isInterfaceTarget(event)) {
+      pointer.active = false;
+      pointer.soundActive = false;
+      pointer.down = false;
+      pointer.touching = false;
+      return;
+    }
+    if (event.pointerType === "touch") pointer.touching = true;
+    pointer.down = true;
+    const control = findNebulaAt(event.clientX, event.clientY);
+    if (control) {
+      activeNebula = control;
+      updatePointer(event, false);
+      updateNebulaControl(control, event.clientX, event.clientY);
+      wakeAudioSoon();
+      return;
+    }
+    updatePointer(event);
+    wakeAudioSoon();
+  }
+
+  function moveWorldPointer(event) {
+    if (activeNebula) {
+      updatePointer(event, false);
+      updateNebulaControl(activeNebula, event.clientX, event.clientY);
+      return;
+    }
+    const isTouchPointer = event.pointerType === "touch" || pointer.touching;
+    const shouldSound = isTouchPointer
+      ? pointer.down || event.buttons > 0
+      : true;
+    updatePointer(event, shouldSound);
+  }
+
+  function endWorldPointer(event) {
+    const wasTouch = event.pointerType === "touch" || pointer.touching;
+    pointer.down = false;
+    pointer.touching = false;
+    if (activeNebula) {
+      activeNebula = null;
+      pointer.active = false;
+      pointer.soundActive = false;
+      return;
+    }
+    updatePointer(event, !wasTouch);
+    if (wasTouch) pointer.active = false;
   }
 
   function syncTouchSize() {
@@ -347,8 +581,81 @@
     const min = Number(touchSize.min);
     const max = Number(touchSize.max);
     const progress = Math.max(0, Math.min(1, (pointer.radius - min) / Math.max(1, max - min)));
-    const root = touchSize.closest(".touch-size");
-    root?.style.setProperty("--touch-fill", `${(progress * 100).toFixed(1)}%`);
+    touchSize.closest(".touch-size")?.style.setProperty("--touch-fill", `${(progress * 100).toFixed(1)}%`);
+  }
+
+  function clamp01(value) {
+    return Math.max(0, Math.min(1, value));
+  }
+
+  function syncChopCount() {
+    if (!chopCountInput) return;
+    chopCountInput.value = String(sliceCount);
+    if (chopCountValue) chopCountValue.textContent = String(sliceCount);
+    const min = Number(chopCountInput.min);
+    const max = Number(chopCountInput.max);
+    const progress = clamp01((sliceCount - min) / Math.max(1, max - min));
+    chopCountInput.closest(".chop-count")?.style.setProperty("--chop-fill", `${(progress * 100).toFixed(1)}%`);
+  }
+
+  function updateChopCount(event) {
+    sliceCount = Number(event.target.value);
+    syncChopCount();
+    if (decoded) makeSlices();
+  }
+
+  function syncEffectVisual(button) {
+    const name = button.dataset.effect;
+    const amount = valueToNorm(name);
+    button.style.setProperty("--effect-amount", amount.toFixed(3));
+    button.setAttribute("aria-pressed", String(!!paramEnabled[name]));
+  }
+
+  function syncAllEffectVisuals() {
+    effectButtons.forEach(syncEffectVisual);
+  }
+
+  function toggleEffect(button) {
+    const name = button.dataset.effect;
+    paramEnabled[name] = !paramEnabled[name];
+    if (name === "ambient") updateAmbientGraph();
+    syncEffectVisual(button);
+    wakeAudioSoon();
+  }
+
+  function beginEffectDrag(event, button) {
+    event.stopPropagation();
+    const name = button.dataset.effect;
+    effectDrag = {
+      button,
+      name,
+      pointerId: event.pointerId,
+      startY: event.clientY,
+      startAmount: valueToNorm(name),
+      moved: false
+    };
+    button.setPointerCapture?.(event.pointerId);
+  }
+
+  function moveEffectDrag(event) {
+    if (!effectDrag || event.pointerId !== effectDrag.pointerId) return;
+    event.stopPropagation();
+    const delta = (effectDrag.startY - event.clientY) / 96;
+    if (Math.abs(event.clientY - effectDrag.startY) > 4) effectDrag.moved = true;
+    paramEnabled[effectDrag.name] = true;
+    params[effectDrag.name] = normToValue(effectDrag.name, effectDrag.startAmount + delta);
+    if (effectDrag.name === "ambient") updateAmbientGraph();
+    syncEffectVisual(effectDrag.button);
+  }
+
+  function endEffectDrag(event) {
+    if (!effectDrag || event.pointerId !== effectDrag.pointerId) return;
+    event.stopPropagation();
+    const drag = effectDrag;
+    effectDrag = null;
+    drag.button.releasePointerCapture?.(event.pointerId);
+    if (!drag.moved) toggleEffect(drag.button);
+    else wakeAudioSoon();
   }
 
   async function toggleRecording() {
@@ -376,8 +683,8 @@
     announce("recording");
   }
 
-  upload.addEventListener("pointerdown", unlockAudio);
-  upload.addEventListener("touchend", unlockAudio, { passive: true });
+  upload.addEventListener("pointerdown", wakeAudioSoon);
+  upload.addEventListener("touchend", wakeAudioSoon, { passive: true });
   fileInput.addEventListener("change", event => loadFile(event.target.files?.[0]));
   recordButton.addEventListener("click", toggleRecording);
   if (touchSize) {
@@ -387,27 +694,71 @@
     });
     touchSize.addEventListener("input", updateTouchSize);
   }
+  if (chopCountInput) {
+    syncChopCount();
+    ["pointerdown", "touchstart", "click"].forEach(type => {
+      chopCountInput.addEventListener(type, event => event.stopPropagation(), { passive: true });
+    });
+    chopCountInput.addEventListener("input", updateChopCount);
+  }
   effectButtons.forEach(button => {
-    ["pointerdown", "touchstart"].forEach(type => {
-      button.addEventListener(type, event => event.stopPropagation(), { passive: true });
+    syncEffectVisual(button);
+    button.addEventListener("pointerdown", event => beginEffectDrag(event, button));
+    button.addEventListener("pointermove", moveEffectDrag);
+    button.addEventListener("pointerup", endEffectDrag);
+    button.addEventListener("pointercancel", event => {
+      event.stopPropagation();
+      effectDrag = null;
     });
     button.addEventListener("click", event => {
       event.stopPropagation();
-      const name = button.dataset.effect;
-      effects[name] = !effects[name];
-      button.setAttribute("aria-pressed", String(effects[name]));
-      unlockAudio();
+      event.preventDefault();
     });
   });
-  window.addEventListener("pointerdown", async event => { await unlockAudio(); updatePointer(event); }, { passive: true });
-  window.addEventListener("pointermove", event => updatePointer(event, event.pointerType === "mouse" || event.buttons > 0), { passive: true });
-  window.addEventListener("pointerup", event => updatePointer(event, false), { passive: true });
-  window.addEventListener("pointercancel", () => { pointer.active = false; }, { passive: true });
+  window.addEventListener("pointerdown", beginWorldPointer, { passive: true });
+  window.addEventListener("pointermove", moveWorldPointer, { passive: true });
+  window.addEventListener("pointerup", endWorldPointer, { passive: true });
+  window.addEventListener("pointercancel", () => {
+    pointer.active = false;
+    pointer.soundActive = false;
+    pointer.down = false;
+    pointer.touching = false;
+    activeNebula = null;
+  }, { passive: true });
+  document.documentElement.addEventListener("pointerleave", () => {
+    pointer.active = false;
+    pointer.soundActive = false;
+    pointer.down = false;
+    pointer.touching = false;
+  }, { passive: true });
+  window.addEventListener("blur", () => {
+    pointer.active = false;
+    pointer.soundActive = false;
+    pointer.down = false;
+    pointer.touching = false;
+  });
+  window.addEventListener("touchstart", () => {
+    pointer.touching = true;
+    wakeAudioSoon();
+  }, { passive: true });
+  window.addEventListener("touchend", () => {
+    pointer.touching = false;
+    pointer.down = false;
+    pointer.active = false;
+    pointer.soundActive = false;
+  }, { passive: true });
+  window.addEventListener("touchcancel", () => {
+    pointer.touching = false;
+    pointer.down = false;
+    pointer.active = false;
+    pointer.soundActive = false;
+  }, { passive: true });
+  window.addEventListener("mousedown", wakeAudioSoon, { passive: true });
   document.addEventListener("visibilitychange", () => {
-    if (!document.hidden && audioContext && audioContext.state !== "running") audioContext.resume().catch(() => {});
+    if (!document.hidden && audioContext && audioContext.state !== "running") wakeAudioSoon();
   });
   window.addEventListener("pageshow", () => {
-    if (audioContext && audioContext.state !== "running") audioContext.resume().catch(() => {});
+    if (audioContext && audioContext.state !== "running") wakeAudioSoon();
   });
   window.addEventListener("resize", resize, { passive: true });
 
